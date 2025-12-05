@@ -11,19 +11,20 @@ import { XRControllerModelFactory } from 'jsm/webxr/XRControllerModelFactory.js'
 
 const scene = new THREE.Scene();
 
-// Kamera
+// Perspektivische Kamera
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 2000);
 camera.position.set(0, 4, 10);
 camera.lookAt(0, 0, 0);
 
-// XR-Rig (Spieler / Benutzer-Referenz)
-// -> wir bewegen das Rig, nicht die Kamera direkt
+// XR-Rig (repräsentiert die Spielerposition im Raum)
+// -> In VR/AR bewegt man idealerweise das Rig, in diesem Projekt
+//    bewegen wir aber den Globus für die "Bewegung".
 const xrRig = new THREE.Group();
 xrRig.position.set(0, 0, 0);
 xrRig.add(camera);
 scene.add(xrRig);
 
-// Renderer mit WebXR
+// WebGL-Renderer mit WebXR-Unterstützung
 const renderer = new THREE.WebGLRenderer({
   antialias: true,
   alpha: true
@@ -33,7 +34,7 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.xr.enabled = true;
 document.body.appendChild(renderer.domElement);
 
-// OrbitControls (nur Desktop)
+// OrbitControls (für Desktop-/2D-Modus, nicht im Headset)
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enablePan = false;
 controls.minDistance = 8;
@@ -53,6 +54,7 @@ let isARSession = false;
 
 renderer.xr.addEventListener('sessionstart', () => {
   const session = renderer.xr.getSession();
+  // Wenn AR: Hintergrund transparent machen, damit reale Welt sichtbar ist
   if (session && session.environmentBlendMode && session.environmentBlendMode !== 'opaque') {
     isARSession = true;
     oldBackground = scene.background;
@@ -63,6 +65,7 @@ renderer.xr.addEventListener('sessionstart', () => {
 });
 
 renderer.xr.addEventListener('sessionend', () => {
+  // Hintergrund bei AR wiederherstellen
   if (isARSession) {
     scene.background = oldBackground;
     isARSession = false;
@@ -196,7 +199,7 @@ const nightAtmosphere = new THREE.Mesh(
   })
 );
 
-// Wireframe-Kugel
+// Wireframe-Kugel für Länder-Konturen
 const geometry = new THREE.SphereGeometry(2.5, 64, 64);
 const lineMat = new THREE.LineBasicMaterial({
   color: 0xffffff,
@@ -206,17 +209,17 @@ const lineMat = new THREE.LineBasicMaterial({
 const edges = new THREE.EdgesGeometry(geometry);
 const line = new THREE.LineSegments(edges, lineMat);
 
-// Globus-Gruppe
+// Globus-Gruppe (enthält Erde + Atmosphären + Länder + Poles)
 const globe = new THREE.Group();
 
-// Wichtig: Globus vor den Benutzer setzen
+// Globus vor den Benutzer setzen (nicht im Kopf)
 globe.position.set(0, 0, -6);
 scene.add(globe);
 
 globe.add(dayAtmosphere);
 globe.add(daySphere);
 
-// OrbitControls → Ziel ist der Globus
+// OrbitControls auf Globus ausrichten (nur Desktop)
 controls.target.copy(globe.position);
 controls.update();
 
@@ -260,7 +263,7 @@ toggleButton.addEventListener('click', () => {
 });
 
 // =====================================================
-//   STERNE
+//   STERNE (Hintergrund-Punktewolke)
 // =====================================================
 
 function addStars() {
@@ -288,15 +291,16 @@ function addStars() {
 addStars();
 
 // =====================================================
-//   GEOJSON + POLES
+//   GEOJSON + POLES (Länder-Punkte)
 // =====================================================
 
 const raycaster = new THREE.Raycaster();
 raycaster.far = 50;
 const mouse = new THREE.Vector2();
-const interactiveObjects = [];
-const allPoles = [];
+const interactiveObjects = []; // alle Poles
+const allPoles = [];           // für Covid an/aus
 
+// Lat/Lon → 3D-Position auf Kugel
 function latLonToVector3(lat, lon, radius) {
   const phi = (90 - lat) * (Math.PI / 180);
   const theta = (lon + 180) * (Math.PI / 180);
@@ -308,6 +312,7 @@ function latLonToVector3(lat, lon, radius) {
   return new THREE.Vector3(x, y, z);
 }
 
+// Einen "Pole" (Zylinder) zu einem Land hinzufügen
 function addPole(lat, lon, radius, countryCode) {
   const poleHeight = 0.6;
   const poleRadius = 0.02;
@@ -336,6 +341,7 @@ function addPole(lat, lon, radius, countryCode) {
   globe.add(pole);
 }
 
+// GeoJSON laden und Länder + Poles erzeugen
 fetch('./geojson/countries.json')
   .then(response => response.text())
   .then(text => {
@@ -350,6 +356,7 @@ fetch('./geojson/countries.json')
     const toggleWireframeButton = document.getElementById('toggleWireframe');
     let isWireframe = false;
 
+    // Button: Wireframe an/aus (Länderumrisse vs. Textur)
     toggleWireframeButton.addEventListener('click', () => {
       if (isWireframe) {
         globe.remove(line);
@@ -377,6 +384,7 @@ fetch('./geojson/countries.json')
       isWireframe = !isWireframe;
     });
 
+    // Für jedes Land den Schwerpunkt berechnen und Pole setzen
     data.features.forEach(feature => {
       const { iso_a3 } = feature.properties;
 
@@ -405,11 +413,12 @@ fetch('./geojson/countries.json')
   });
 
 // =====================================================
-//   COVID-API + INFOBOX + 3D-UI PANEL
+//   COVID-API + INFOBOX (HTML) + 3D-UI PANEL
 // =====================================================
 
 const covidCache = new Map();
 
+// Daten für ein Land von der COVID-API holen (mit Cache)
 function fetchCovidData(isoCode) {
   if (covidCache.has(isoCode)) {
     return Promise.resolve(covidCache.get(isoCode));
@@ -423,7 +432,7 @@ function fetchCovidData(isoCode) {
     .catch(error => console.error(`Error fetching data for ${isoCode}:`, error));
 }
 
-// HTML-InfoBox (Desktop)
+// HTML-Infobox (nur auf Desktop/Monitor wirklich sichtbar)
 const infoBox = document.createElement('div');
 infoBox.style.position = 'absolute';
 infoBox.style.top = '10px';
@@ -436,7 +445,7 @@ infoBox.style.display = 'none';
 infoBox.style.zIndex = '999';
 document.body.appendChild(infoBox);
 
-// 3D-UI-Panel: Canvas + Plane vor der Kamera
+// Canvas für 3D-UI-Panel (im Headset sichtbar)
 const uiCanvas = document.createElement('canvas');
 uiCanvas.width = 512;
 uiCanvas.height = 256;
@@ -450,10 +459,21 @@ const uiMaterial = new THREE.MeshBasicMaterial({
 const uiGeometry = new THREE.PlaneGeometry(2.4, 1.2);
 const uiPanel = new THREE.Mesh(uiGeometry, uiMaterial);
 
-// Panel im Kameraraum
+// Panel vor der Kamera (im Kamerakoordinatensystem)
 uiPanel.position.set(0, 1.0, -3);
 camera.add(uiPanel);
 
+// Hilfsfunktion: ISO2-Code ("FR") → Emoji-Flagge (🇫🇷)
+function iso2ToFlagEmoji(iso2) {
+  if (!iso2 || iso2.length !== 2) return '';
+  const codePoints = iso2
+    .toUpperCase()
+    .split('')
+    .map(c => 0x1F1E6 + (c.charCodeAt(0) - 65));
+  return String.fromCodePoint(...codePoints);
+}
+
+// Panel leeren und Standard-Text anzeigen
 function clearUIPanel() {
   uiCtx.clearRect(0, 0, uiCanvas.width, uiCanvas.height);
   uiCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
@@ -465,44 +485,33 @@ function clearUIPanel() {
   uiTexture.needsUpdate = true;
 }
 
-// flagImg ist optional (kann undefined sein)
-// flagImg ist optional (kann undefined sein)
-function drawUIPanel(data, flagImg) {
+// Panel mit COVID-Daten zeichnen (inkl. Emoji-Flagge)
+function drawUIPanel(data) {
   uiCtx.clearRect(0, 0, uiCanvas.width, uiCanvas.height);
 
-  // Hintergrund
+  // Hintergrundfläche
   uiCtx.fillStyle = 'rgba(0, 0, 0, 0.75)';
   uiCtx.fillRect(0, 0, uiCanvas.width, uiCanvas.height);
 
   uiCtx.fillStyle = 'white';
   uiCtx.textAlign = 'left';
 
-  let yStart;
+  // Emoji-Flagge aus ISO2-Code
+  const iso2 = data.countryInfo?.iso2 || '';
+  const flagEmoji = iso2ToFlagEmoji(iso2);
 
-  if (flagImg) {
-    // flag
-    const flagWidth = 120;
-    const flagHeight = 80;
-    const flagX = 20;
-    const flagY = 20;
-
-    uiCtx.drawImage(flagImg, flagX, flagY, flagWidth, flagHeight);
-
-    // name
-    uiCtx.font = '30px Arial';
-    uiCtx.fillText(data.country || 'Unknown', flagX + flagWidth + 20, flagY + 50);
-
-    yStart = flagY + flagHeight + 30; 
-  } else {
-    uiCtx.font = '30px Arial';
-    uiCtx.fillText(data.country || 'Unknown', 20, 50);
-    yStart = 90;
+  // Titelzeile: Flagge + Ländername
+  uiCtx.font = '32px Arial';
+  let title = data.country || 'Unknown';
+  if (flagEmoji) {
+    title = `${flagEmoji}  ${title}`;
   }
+  uiCtx.fillText(title, 20, 50);
 
+  // Textzeilen mit Kennzahlen
   uiCtx.font = '22px Arial';
-
+  let y = 90;
   const lineHeight = 32;
-  let y = yStart;
 
   const lines = [
     `Population: ${data.population?.toLocaleString?.() || 'n/a'}`,
@@ -521,9 +530,9 @@ function drawUIPanel(data, flagImg) {
   uiTexture.needsUpdate = true;
 }
 
-
+// COVID-Infos gleichzeitig in HTML-Box (Desktop) und 3D-Panel (XR) anzeigen
 function showCovidInfo(data) {
-  // HTML-Infobox (Desktop)
+  // HTML-Infobox
   infoBox.style.display = 'block';
   infoBox.innerHTML = `
     <div style="display:flex; align-items:center; margin-bottom:8px;">
@@ -538,26 +547,14 @@ function showCovidInfo(data) {
     <p><strong>Critical:</strong> ${data.critical.toLocaleString()}</p>
   `;
 
+  // 3D-Panel im Headset (mit Emoji-Flagge)
   drawUIPanel(data);
-
-  const flagUrl = data.countryInfo?.flag;
-  if (flagUrl) {
-    const img = new Image();
-    img.crossOrigin = 'anonymous'; // wichtig für CORS
-    img.onload = () => {
-      drawUIPanel(data, img); 
-    };
-    img.onerror = () => {
-      
-      console.warn('Flag-Image konnte nicht geladen werden:', flagUrl);
-    };
-    img.src = flagUrl;
-  }
 }
 
-
+// Panel initial mit Standardtext
 clearUIPanel();
 
+// Button: COVID-Daten ein-/ausblenden (zeigt/verbirgt alle Poles)
 const toggleCovid = document.getElementById('toggleCovid');
 let covidVisible = true;
 
@@ -573,7 +570,7 @@ toggleCovid.addEventListener('click', () => {
   }
 });
 
-// Maus-Raycasting (Desktop)
+// Maus-Raycasting (nur Desktop, nicht im Headset)
 window.addEventListener('mousemove', (event) => {
   if (renderer.xr.isPresenting) return;
 
@@ -620,7 +617,7 @@ const controllerGrip2 = renderer.xr.getControllerGrip(1);
 controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
 xrRig.add(controllerGrip2);
 
-// Sichtbare "Laser"
+// Sichtbarer "Laser-Strahl" für beide Controller
 function buildControllerVisual(controller) {
   const geometry = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(0, 0, 0),
@@ -640,7 +637,7 @@ buildControllerVisual(controller2);
 
 const tempMatrix = new THREE.Matrix4();
 
-// Für Globe-Rotation beim Grab
+// Variablen für Globus-Rotation beim "Grab"
 let grabbedGlobe = false;
 let activeController = null;
 const initialControllerQuat = new THREE.Quaternion();
@@ -648,7 +645,7 @@ const initialGlobeQuat = new THREE.Quaternion();
 const deltaQuat = new THREE.Quaternion();
 const invInitialControllerQuat = new THREE.Quaternion();
 
-// Hilfsfunktion: Ray aus Controller
+// Raycast-Hilfsfunktion von einem Controller aus
 function intersectFromController(controller, objects) {
   tempMatrix.identity().extractRotation(controller.matrixWorld);
   raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
@@ -656,10 +653,11 @@ function intersectFromController(controller, objects) {
   return raycaster.intersectObjects(objects, true);
 }
 
+// Trigger gedrückt
 function onSelectStart(event) {
   const controller = event.target;
 
-  // 1) Pole treffen?
+  // 1) Versuch: einen Pole treffen
   const poleHits = intersectFromController(controller, interactiveObjects);
   if (poleHits.length > 0) {
     const pole = poleHits[0].object;
@@ -674,7 +672,7 @@ function onSelectStart(event) {
     return;
   }
 
-  // 2) Sonst Globus "greifen" => Rotation, nicht Translation
+  // 2) Wenn kein Pole getroffen -> Globus "greifen" (Rotation)
   const globeMeshes = [];
   if (globe.children.includes(daySphere)) globeMeshes.push(daySphere);
   if (globe.children.includes(nightSphere)) globeMeshes.push(nightSphere);
@@ -688,12 +686,13 @@ function onSelectStart(event) {
   }
 }
 
+// Trigger losgelassen
 function onSelectEnd() {
   grabbedGlobe = false;
   activeController = null;
 }
 
-// Zoom via Squeeze (optional beibehalten)
+// Zoom via Squeeze-Taste (optional, Globus näher/weiter)
 let nearDistance = 4;
 let farDistance = 10;
 let isNear = false;
@@ -706,6 +705,7 @@ function onSqueezeStart() {
   controls.target.copy(globe.position);
 }
 
+// Events für beide Controller registrieren
 controller1.addEventListener('selectstart', onSelectStart);
 controller1.addEventListener('selectend', onSelectEnd);
 controller1.addEventListener('squeezestart', onSqueezeStart);
@@ -716,6 +716,7 @@ controller2.addEventListener('squeezestart', onSqueezeStart);
 
 // =====================================================
 //   LOCOMOTION MIT LINKEM STICK (ANALOG)
+//   -> Wir verschieben den Globus relativ zum Blick
 // =====================================================
 
 const moveSpeed = 0.03;
@@ -735,10 +736,10 @@ function handleXRGamepadMovement() {
     const xAxis = axes[0]; // links/rechts
     const yAxis = axes[1]; // vor/zurück (negativ = nach vorn)
 
-    // Deadzone
+    // Deadzone -> kleine Bewegungen ignorieren
     if (Math.abs(xAxis) < 0.1 && Math.abs(yAxis) < 0.1) continue;
 
-    // Blickrichtung auf XZ-Projektion
+    // Blickrichtung der Kamera (auf XZ-Ebene projiziert)
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
     forward.y = 0;
     forward.normalize();
@@ -747,10 +748,12 @@ function handleXRGamepadMovement() {
     right.y = 0;
     right.normalize();
 
-    // yAxis negativ = nach vorne
-    xrRig.position.addScaledVector(forward, moveSpeed * -yAxis);
-    // xAxis = strafen
-    xrRig.position.addScaledVector(right, moveSpeed * xAxis);
+    // Wir bewegen NICHT den Spieler, sondern den Globus in entgegengesetzter Richtung.
+    // yAxis < 0 = "nach vorne laufen" -> Globus kommt näher
+    globe.position.addScaledVector(forward, moveSpeed * yAxis);
+
+    // xAxis = seitlich strafen -> Globus seitlich verschieben
+    globe.position.addScaledVector(right, -moveSpeed * xAxis);
   }
 }
 
@@ -762,11 +765,12 @@ let rotationSpeed = 0.001;
 let isPaused = false;
 
 function animate() {
+  // Globus automatisch rotieren (wenn nicht pausiert)
   if (!isPaused) {
     globe.rotation.y += rotationSpeed;
   }
 
-  // Globus-Rotation, wenn "gegriffen"
+  // Wenn Globus gegriffen -> Rotation folgt Controller-Orientierung
   if (grabbedGlobe && activeController) {
     deltaQuat.copy(activeController.quaternion);
     invInitialControllerQuat.copy(initialControllerQuat).invert();
@@ -774,9 +778,10 @@ function animate() {
     globe.quaternion.copy(deltaQuat.multiply(initialGlobeQuat));
   }
 
-  // XR-Locomotion mit linkem Stick
+  // Locomotion per linkem Stick im XR-Modus
   handleXRGamepadMovement();
 
+  // OrbitControls nur im 2D-/Desktop-Modus
   if (!renderer.xr.isPresenting) {
     controls.update();
   }
@@ -797,7 +802,7 @@ window.addEventListener('resize', () => {
 });
 
 // =====================================================
-//   UI: PAUSE + SPEED
+//   UI: PAUSE + SPEED (Desktop-Overlay)
 // =====================================================
 
 const controlsDiv = document.createElement('div');
