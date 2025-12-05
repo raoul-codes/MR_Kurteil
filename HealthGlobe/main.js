@@ -1,9 +1,10 @@
 import * as THREE from "three";
 import { OrbitControls } from 'jsm/controls/OrbitControls.js';
-import { drawThreeGeo, container } from "./src/threeGeoJSON.js";
+import { drawThreeGeo } from "./src/threeGeoJSON.js";
 // WebXR Buttons für VR und AR
 import { VRButton } from 'jsm/webxr/VRButton.js';
 import { ARButton } from 'jsm/webxr/ARButton.js';
+import { XRControllerModelFactory } from 'jsm/webxr/XRControllerModelFactory.js';
 
 // =====================================================
 //   SZENE, KAMERA, RENDERER
@@ -13,8 +14,6 @@ const scene = new THREE.Scene();
 
 // Kamera für Desktop-Ansicht
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 2000);
-
-// Wir stellen die Kamera so ein, dass wir "außerhalb" der Erde starten
 camera.position.set(0, 4, 10);
 camera.lookAt(0, 0, 0);
 
@@ -40,8 +39,6 @@ controls.maxDistance = 20;
 controls.enableDamping = true;
 controls.autoRotate = true;
 controls.autoRotateSpeed *= 0.25;
-
-// Wir wollen immer um den Globus rotieren, egal wo er steht
 controls.target.set(0, 0, 0);
 controls.update();
 
@@ -54,7 +51,6 @@ let isARSession = false;
 
 renderer.xr.addEventListener('sessionstart', () => {
   const session = renderer.xr.getSession();
-  // "immersive-ar" erkennt man über environmentBlendMode
   if (session && session.environmentBlendMode && session.environmentBlendMode !== 'opaque') {
     isARSession = true;
     oldBackground = scene.background;
@@ -75,7 +71,6 @@ renderer.xr.addEventListener('sessionend', () => {
 //   WEBXR-BUTTONS (VR + AR) SAUBER PLATZIEREN
 // =====================================================
 
-// VR-Button (unten links)
 const vrButton = VRButton.createButton(renderer);
 vrButton.style.position = 'absolute';
 vrButton.style.bottom   = '20px';
@@ -84,71 +79,69 @@ vrButton.style.zIndex   = '999';
 vrButton.style.width    = '140px';
 document.body.appendChild(vrButton);
 
-// AR-Button (darüber, gleiche Spalte)
 const arButton = ARButton.createButton(renderer, {
   requiredFeatures: [],
   optionalFeatures: ['local-floor']
 });
 arButton.style.position = 'absolute';
-arButton.style.bottom   = '70px';   
+arButton.style.bottom   = '70px';   // darüber
 arButton.style.left     = '20px';
 arButton.style.zIndex   = '999';
 arButton.style.width    = '140px';
 document.body.appendChild(arButton);
-
 
 // =====================================================
 //   SHADER FÜR ERDE + ATMOSPHÄRE
 // =====================================================
 
 const vertexShader = `
-    varying vec2 vertexUV;
-    varying vec3 vertexNormal;
+  varying vec2 vertexUV;
+  varying vec3 vertexNormal;
 
-    void main() {
-      vertexUV = uv;
-      vertexNormal = normalize(normalMatrix * normal);
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
+  void main() {
+    vertexUV = uv;
+    vertexNormal = normalize(normalMatrix * normal);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
 `;
 
 const fragmentShader = `
-    uniform sampler2D globeTexture;
-    varying vec2 vertexUV;
-    varying vec3 vertexNormal;
+  uniform sampler2D globeTexture;
+  varying vec2 vertexUV;
+  varying vec3 vertexNormal;
 
-    void main() {
-        float intensity = 1.05 - dot(vertexNormal, vec3(0.0, 0.0, 1.0));
-        vec3 atmosphere = vec3(0.3, 0.6, 1.0) * pow(intensity, 1.5);
-        gl_FragColor = vec4(atmosphere + texture2D(globeTexture, vertexUV).xyz, 1.0);
-    }
+  void main() {
+    float intensity = 1.05 - dot(vertexNormal, vec3(0.0, 0.0, 1.0));
+    vec3 atmosphere = vec3(0.3, 0.6, 1.0) * pow(intensity, 1.5);
+    gl_FragColor = vec4(atmosphere + texture2D(globeTexture, vertexUV).xyz, 1.0);
+  }
 `;
 
 const vertexShaderAtmosphere = `
-    varying vec3 vertexNormal;
+  varying vec3 vertexNormal;
 
-    void main() {
-      vertexNormal = normalize(normalMatrix * normal);
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
+  void main() {
+    vertexNormal = normalize(normalMatrix * normal);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
 `;
 
 const fragmentDayShaderAtmosphere = `
-    varying vec3 vertexNormal;
+  varying vec3 vertexNormal;
 
-    void main() {
-        float intensity = pow(0.55 - dot(vertexNormal, vec3(0.0, 0.0, 1.0)), 2.0);
-        gl_FragColor = vec4(0.3, 0.6, 1.0, 1.0) * intensity;
-    }
+  void main() {
+    float intensity = pow(0.55 - dot(vertexNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+    gl_FragColor = vec4(0.3, 0.6, 1.0, 1.0) * intensity;
+  }
 `;
 
 const fragmentNightShaderAtmosphere = `
-    varying vec3 vertexNormal;
+  varying vec3 vertexNormal;
 
-    void main() {
-        float intensity = pow(0.4 - dot(vertexNormal, vec3(0.0, 0.0, 1.0)), 2.0);
-        gl_FragColor = vec4(1.0, 1.0, 0.0, 1.0) * intensity;
-    }
+  void main() {
+    float intensity = pow(0.4 - dot(vertexNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+    gl_FragColor = vec4(1.0, 1.0, 0.0, 1.0) * intensity;
+  }
 `;
 
 // =====================================================
@@ -211,10 +204,10 @@ const lineMat = new THREE.LineBasicMaterial({
 const edges = new THREE.EdgesGeometry(geometry);
 const line = new THREE.LineSegments(edges, lineMat);
 
-// Gruppe für den Globus
+// Globus-Gruppe
 const globe = new THREE.Group();
 
-// WICHTIG: Globus ein Stück vor die Kamera setzen, damit wir in VR/AR nicht "drin" sind
+// Wichtig: Globus vor den XR-User setzen, damit man NICHT "drin" ist
 globe.position.set(0, 0, -6);
 scene.add(globe);
 
@@ -226,7 +219,7 @@ controls.target.copy(globe.position);
 controls.update();
 
 // =====================================================
-//   HINTERGRUND (SPACE-TEXTUR)
+//   HINTERGRUND (SPACE)
 // =====================================================
 
 const loader = new THREE.TextureLoader();
@@ -287,24 +280,21 @@ function addStars() {
   }
 
   starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-
   const stars = new THREE.Points(starGeometry, starMaterial);
   scene.add(stars);
 }
 addStars();
 
 // =====================================================
-//   GEOJSON + "POLES" (Covid-Visualisierung)
+//   GEOJSON + POLES (Covid-Visualisierung)
 // =====================================================
 
 const raycaster = new THREE.Raycaster();
+raycaster.far = 50;
 const mouse = new THREE.Vector2();
-const interactiveObjects = [];  // Liste aller "poles"
+const interactiveObjects = [];  // alle poles
+const allPoles = [];            // für Covid An/Aus
 
-// Globale Liste aller poles, damit der Covid-Button nur EIN Listener hat
-const allPoles = [];
-
-// Lat/Lon → 3D-Position
 function latLonToVector3(lat, lon, radius) {
   const phi = (90 - lat) * (Math.PI / 180);
   const theta = (lon + 180) * (Math.PI / 180);
@@ -316,7 +306,6 @@ function latLonToVector3(lat, lon, radius) {
   return new THREE.Vector3(x, y, z);
 }
 
-// Einen "Pole" hinzufügen
 function addPole(lat, lon, radius, countryCode) {
   const poleHeight = 0.6;
   const poleRadius = 0.02;
@@ -340,13 +329,11 @@ function addPole(lat, lon, radius, countryCode) {
   pole.rotateX(Math.PI / 2);
 
   pole.userData = { isoCode: countryCode };
-
   interactiveObjects.push(pole);
   allPoles.push(pole);
   globe.add(pole);
 }
 
-// GeoJSON laden
 fetch('./geojson/countries.json')
   .then(response => response.text())
   .then(text => {
@@ -363,7 +350,6 @@ fetch('./geojson/countries.json')
 
     toggleWireframeButton.addEventListener('click', () => {
       if (isWireframe) {
-        // zurück zu Kugel
         globe.remove(line);
         globe.remove(countries);
         if (isNightMode) {
@@ -375,7 +361,6 @@ fetch('./geojson/countries.json')
         }
         toggleWireframeButton.innerText = 'Wireframe : OFF';
       } else {
-        // Wireframe an
         if (isNightMode) {
           globe.remove(nightSphere);
           globe.remove(nightAtmosphere);
@@ -390,7 +375,6 @@ fetch('./geojson/countries.json')
       isWireframe = !isWireframe;
     });
 
-    // Für jedes Land den Schwerpunkt berechnen und Pole setzen
     data.features.forEach(feature => {
       const { iso_a3 } = feature.properties;
 
@@ -419,7 +403,7 @@ fetch('./geojson/countries.json')
   });
 
 // =====================================================
-//   COVID-API + INFOBOX
+//   COVID-API + INFOBOX (HTML, sichtbar in 2D)
 // =====================================================
 
 const covidCache = new Map();
@@ -449,7 +433,6 @@ infoBox.style.display = 'none';
 infoBox.style.zIndex = '999';
 document.body.appendChild(infoBox);
 
-// Nur EIN Listener für den Covid-Toggle
 const toggleCovid = document.getElementById('toggleCovid');
 let covidVisible = true;
 
@@ -461,12 +444,9 @@ toggleCovid.addEventListener('click', () => {
   toggleCovid.innerText = covidVisible ? 'Covid Data: ON' : 'Covid Data: OFF';
 });
 
-// Raycasting mit Maus (nur Desktop)
+// Maus-Raycasting (nur Desktop)
 window.addEventListener('mousemove', (event) => {
-  if (renderer.xr.isPresenting) {
-    // In VR/AR gibt es keine Maus → nichts tun
-    return;
-  }
+  if (renderer.xr.isPresenting) return;
 
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -504,6 +484,119 @@ window.addEventListener('mousemove', (event) => {
 });
 
 // =====================================================
+//   XR CONTROLLER: LASER + INTERAKTION
+// =====================================================
+
+const controllerModelFactory = new XRControllerModelFactory();
+
+const controller1 = renderer.xr.getController(0);
+const controller2 = renderer.xr.getController(1);
+scene.add(controller1);
+scene.add(controller2);
+
+const controllerGrip1 = renderer.xr.getControllerGrip(0);
+controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
+scene.add(controllerGrip1);
+
+const controllerGrip2 = renderer.xr.getControllerGrip(1);
+controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
+scene.add(controllerGrip2);
+
+// Sichtbarer "Laser"-Strahl
+function buildControllerVisual(controller) {
+  const geometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, 0, -1)
+  ]);
+  const line = new THREE.Line(
+    geometry,
+    new THREE.LineBasicMaterial({ color: 0xffffff })
+  );
+  line.name = 'ray';
+  line.scale.z = 10;
+  controller.add(line);
+}
+
+buildControllerVisual(controller1);
+buildControllerVisual(controller2);
+
+const tempMatrix = new THREE.Matrix4();
+let grabbedGlobe = false;
+let activeController = null;
+const grabOffset = new THREE.Vector3();
+
+// Hilfsfunktion: Ray aus Controller in die Szene
+function intersectFromController(controller, objects) {
+  tempMatrix.identity().extractRotation(controller.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+  raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+  return raycaster.intersectObjects(objects, true);
+}
+
+function onSelectStart(event) {
+  const controller = event.target;
+
+  // 1) Versuchen, einen Pole zu treffen
+  const poleHits = intersectFromController(controller, interactiveObjects);
+  if (poleHits.length > 0) {
+    const pole = poleHits[0].object;
+
+    interactiveObjects.forEach(p => p.material.color.set(0x00ff00));
+    pole.material.color.set(0xff0000);
+
+    const { isoCode } = pole.userData;
+    fetchCovidData(isoCode).then(data => {
+      // In VR/AR sieht man die HTML-Infobox nicht im Headset,
+      // aber in der Konsole oder auf dem Mirroring:
+      console.log(`COVID ${data.country}: cases=${data.cases}, deaths=${data.deaths}`);
+    });
+
+    return;
+  }
+
+  // 2) Wenn kein Pole getroffen → versuchen, den Globus zu "greifen"
+  const globeMeshes = [];
+  if (globe.children.includes(daySphere)) globeMeshes.push(daySphere);
+  if (globe.children.includes(nightSphere)) globeMeshes.push(nightSphere);
+
+  const globeHits = intersectFromController(controller, globeMeshes);
+  if (globeHits.length > 0) {
+    grabbedGlobe = true;
+    activeController = controller;
+
+    const controllerPos = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
+    grabOffset.copy(globe.position).sub(controllerPos);
+  }
+}
+
+function onSelectEnd() {
+  grabbedGlobe = false;
+  activeController = null;
+}
+
+// Zoom via Squeeze: Globus näher/weiter
+let nearDistance = 4;
+let farDistance = 10;
+let isNear = false;
+
+function onSqueezeStart() {
+  const dir = globe.position.clone().normalize();
+  isNear = !isNear;
+  const d = isNear ? nearDistance : farDistance;
+  globe.position.copy(dir.multiplyScalar(-d)); // -d weil dir ~ (0,0,-1)
+  controls.target.copy(globe.position);
+}
+
+// Events an Controller binden
+controller1.addEventListener('selectstart', onSelectStart);
+controller1.addEventListener('selectend', onSelectEnd);
+controller1.addEventListener('squeezestart', onSqueezeStart);
+
+controller2.addEventListener('selectstart', onSelectStart);
+controller2.addEventListener('selectend', onSelectEnd);
+controller2.addEventListener('squeezestart', onSqueezeStart);
+
+// =====================================================
 //   ANIMATION / ROTATION
 // =====================================================
 
@@ -515,7 +608,12 @@ function animate() {
     globe.rotation.y += rotationSpeed;
   }
 
-  // OrbitControls nur im "normalen" Modus
+  // Wenn Globus "gegriffen" ist, folgt er dem Controller
+  if (grabbedGlobe && activeController) {
+    const controllerPos = new THREE.Vector3().setFromMatrixPosition(activeController.matrixWorld);
+    globe.position.copy(controllerPos).add(grabOffset);
+  }
+
   if (!renderer.xr.isPresenting) {
     controls.update();
   }
@@ -523,7 +621,6 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-// WebXR-kompatible Loop
 renderer.setAnimationLoop(animate);
 
 // =====================================================
@@ -537,7 +634,7 @@ window.addEventListener('resize', () => {
 });
 
 // =====================================================
-//   UI: PAUSE + SPEED-SLIDER
+//   UI: PAUSE + SPEED
 // =====================================================
 
 const controlsDiv = document.createElement('div');
