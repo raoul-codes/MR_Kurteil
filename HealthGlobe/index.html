@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Earth Modelling</title>
+    <style>
+      body {
+      margin: 0;
+      overflow: hidden;
+      background: radial-gradient(circle, #001520, #000);
+      font-family: Arial, sans-serif;
+      color: white;
+
+  #infoBox {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: rgba(0, 0, 0, 0.85);
+    color: white;
+    font-family: Arial, sans-serif;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    width: 300px;
+    display: none;
+  }
+  #infoBox img {
+    width: 50px;
+    height: auto;
+    border-radius: 5px;
+    margin-right: 10px;
+    vertical-align: middle;
+  }
+  #infoBox h3 {
+    margin: 0;
+    font-size: 18px;
+    margin-bottom: 10px;
+  }
+  #infoBox p {
+    margin: 5px 0;
+    font-size: 14px;
+  }
+    }
+
+    </style>
+     <script type="importmap">
+      {
+				"imports": {
+					"three": "https://cdn.jsdelivr.net/npm/three@0.170/build/three.module.js",
+          "jsm/": "https://cdn.jsdelivr.net/npm/three@0.170/examples/jsm/"
+        }
+			}
+    </script>
+  </head>
+  <body>
+    <button id="toggleMode" style="
+      position: absolute;
+      width: 208px;
+      top: 65px;
+      left: 10px;
+      z-index: 1000;
+      padding: 10px 15px;
+      background-color: rgba(0, 0, 0, 0.5);
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+    ">Night Mode
+    </button>
+    <button id="toggleWireframe" style="
+    position: absolute;
+    width: 208px;
+    top: 115px;
+    left: 10px;
+    z-index: 1000;
+    padding: 10px 15px;
+    background-color: rgba(0, 0, 0, 0.5);
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+  ">Wireframe : OFF
+    </button>
+    <button id="toggleCovid" style="
+    position: absolute;
+    width: 208px;
+    top: 165px;
+    left: 10px;
+    z-index: 1000;
+    padding: 10px 15px;
+    background-color: rgba(0, 0, 0, 0.5);
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    ">Covid Data: ON
+    </button>
+    
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
