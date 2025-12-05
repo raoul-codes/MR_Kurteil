@@ -17,6 +17,9 @@ const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 20
 camera.position.set(0, 4, 10);
 camera.lookAt(0, 0, 0);
 
+// Kamera in die Szene einfügen (wichtig für 3D-UI, die an der Kamera hängt)
+scene.add(camera);
+
 // WebGL Renderer mit WebXR-Unterstützung
 const renderer = new THREE.WebGLRenderer({
   antialias: true,
@@ -403,7 +406,7 @@ fetch('./geojson/countries.json')
   });
 
 // =====================================================
-//   COVID-API + INFOBOX (HTML, sichtbar in 2D)
+//   COVID-API + INFOBOX (HTML) + 3D-UI PANEL
 // =====================================================
 
 const covidCache = new Map();
@@ -421,6 +424,7 @@ function fetchCovidData(isoCode) {
     .catch(error => console.error(`Error fetching data for ${isoCode}:`, error));
 }
 
+// HTML-InfoBox (Desktop)
 const infoBox = document.createElement('div');
 infoBox.style.position = 'absolute';
 infoBox.style.top = '10px';
@@ -433,6 +437,101 @@ infoBox.style.display = 'none';
 infoBox.style.zIndex = '999';
 document.body.appendChild(infoBox);
 
+// 3D-UI-Panel: Canvas + Plane vor der Kamera
+const uiCanvas = document.createElement('canvas');
+uiCanvas.width = 512;
+uiCanvas.height = 256;
+const uiCtx = uiCanvas.getContext('2d');
+
+const uiTexture = new THREE.CanvasTexture(uiCanvas);
+const uiMaterial = new THREE.MeshBasicMaterial({
+  map: uiTexture,
+  transparent: true
+});
+
+// Ein etwas breiteres Panel
+const uiGeometry = new THREE.PlaneGeometry(2.4, 1.2);
+const uiPanel = new THREE.Mesh(uiGeometry, uiMaterial);
+
+// Panel vor der Kamera platzieren (im Kameraraum)
+uiPanel.position.set(0, 1.0, -3);
+camera.add(uiPanel);
+
+// Hilfsfunktionen für das Panel
+function clearUIPanel() {
+  uiCtx.clearRect(0, 0, uiCanvas.width, uiCanvas.height);
+
+  // Halbtransparenten Hintergrund
+  uiCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+  uiCtx.fillRect(0, 0, uiCanvas.width, uiCanvas.height);
+
+  uiCtx.fillStyle = 'white';
+  uiCtx.font = '28px Arial';
+  uiCtx.textAlign = 'center';
+  uiCtx.fillText('Select a country by pointing at a pole', uiCanvas.width / 2, uiCanvas.height / 2);
+
+  uiTexture.needsUpdate = true;
+}
+
+function drawUIPanel(data) {
+  uiCtx.clearRect(0, 0, uiCanvas.width, uiCanvas.height);
+
+  // Hintergrund
+  uiCtx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+  uiCtx.fillRect(0, 0, uiCanvas.width, uiCanvas.height);
+
+  // Titel
+  uiCtx.fillStyle = 'white';
+  uiCtx.font = '30px Arial';
+  uiCtx.textAlign = 'left';
+  uiCtx.fillText(data.country || 'Unknown', 20, 50);
+
+  // Linien
+  uiCtx.font = '22px Arial';
+  let y = 90;
+  const lineHeight = 32;
+
+  const lines = [
+    `Population: ${data.population?.toLocaleString?.() || 'n/a'}`,
+    `Cases: ${data.cases?.toLocaleString?.() || 'n/a'}`,
+    `Deaths: ${data.deaths?.toLocaleString?.() || 'n/a'}`,
+    `Recovered: ${data.recovered?.toLocaleString?.() || 'n/a'}`,
+    `Active: ${data.active?.toLocaleString?.() || 'n/a'}`,
+    `Critical: ${data.critical?.toLocaleString?.() || 'n/a'}`
+  ];
+
+  for (const line of lines) {
+    uiCtx.fillText(line, 20, y);
+    y += lineHeight;
+  }
+
+  uiTexture.needsUpdate = true;
+}
+
+// gemeinsame Funktion: HTML + 3D-Panel updaten
+function showCovidInfo(data) {
+  // HTML-InfoBox für Desktop
+  infoBox.style.display = 'block';
+  infoBox.innerHTML = `
+    <div style="display:flex; align-items:center; margin-bottom:8px;">
+      <img src="${data.countryInfo.flag}" alt="Flag of ${data.country}" style="width:40px; height:auto; margin-right:8px;">
+      <h3 style="margin:0;">${data.country}</h3>
+    </div>
+    <p><strong>Population:</strong> ${data.population.toLocaleString()}</p>
+    <p><strong>Cases:</strong> ${data.cases.toLocaleString()}</p>
+    <p><strong>Deaths:</strong> ${data.deaths.toLocaleString()}</p>
+    <p><strong>Recovered:</strong> ${data.recovered.toLocaleString()}</p>
+    <p><strong>Active:</strong> ${data.active.toLocaleString()}</p>
+    <p><strong>Critical:</strong> ${data.critical.toLocaleString()}</p>
+  `;
+
+  // 3D-Panel für VR/AR
+  drawUIPanel(data);
+}
+
+// Anfangszustand des Panels
+clearUIPanel();
+
 const toggleCovid = document.getElementById('toggleCovid');
 let covidVisible = true;
 
@@ -442,6 +541,10 @@ toggleCovid.addEventListener('click', () => {
     pole.visible = covidVisible;
   });
   toggleCovid.innerText = covidVisible ? 'Covid Data: ON' : 'Covid Data: OFF';
+  if (!covidVisible) {
+    infoBox.style.display = 'none';
+    clearUIPanel();
+  }
 });
 
 // Maus-Raycasting (nur Desktop)
@@ -464,22 +567,11 @@ window.addEventListener('mousemove', (event) => {
 
     const { isoCode } = intersectedPole.userData;
     fetchCovidData(isoCode).then(data => {
-      infoBox.style.display = 'block';
-      infoBox.innerHTML = `
-        <div style="display:flex; align-items:center; margin-bottom:8px;">
-          <img src="${data.countryInfo.flag}" alt="Flag of ${data.country}" style="width:40px; height:auto; margin-right:8px;">
-          <h3 style="margin:0;">${data.country}</h3>
-        </div>
-        <p><strong>Population:</strong> ${data.population.toLocaleString()}</p>
-        <p><strong>Cases:</strong> ${data.cases.toLocaleString()}</p>
-        <p><strong>Deaths:</strong> ${data.deaths.toLocaleString()}</p>
-        <p><strong>Recovered:</strong> ${data.recovered.toLocaleString()}</p>
-        <p><strong>Active:</strong> ${data.active.toLocaleString()}</p>
-        <p><strong>Critical:</strong> ${data.critical.toLocaleString()}</p>
-      `;
+      showCovidInfo(data);
     });
   } else {
     infoBox.style.display = 'none';
+    clearUIPanel();
   }
 });
 
@@ -546,9 +638,8 @@ function onSelectStart(event) {
 
     const { isoCode } = pole.userData;
     fetchCovidData(isoCode).then(data => {
-      // In VR/AR sieht man die HTML-Infobox nicht im Headset,
-      // aber in der Konsole oder auf dem Mirroring:
-      console.log(`COVID ${data.country}: cases=${data.cases}, deaths=${data.deaths}`);
+      // Jetzt auch im 3D-Panel im Headset sichtbar
+      showCovidInfo(data);
     });
 
     return;
