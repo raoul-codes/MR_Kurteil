@@ -75,22 +75,27 @@ renderer.xr.addEventListener('sessionend', () => {
 //   WEBXR-BUTTONS (VR + AR) SAUBER PLATZIEREN
 // =====================================================
 
+// VR-Button (unten links)
 const vrButton = VRButton.createButton(renderer);
 vrButton.style.position = 'absolute';
-vrButton.style.bottom  = '20px';
-vrButton.style.left    = '20px';
-vrButton.style.zIndex  = '999';
+vrButton.style.bottom   = '20px';
+vrButton.style.left     = '20px';
+vrButton.style.zIndex   = '999';
+vrButton.style.width    = '140px';
 document.body.appendChild(vrButton);
 
+// AR-Button (darüber, gleiche Spalte)
 const arButton = ARButton.createButton(renderer, {
   requiredFeatures: [],
   optionalFeatures: ['local-floor']
 });
 arButton.style.position = 'absolute';
-arButton.style.bottom   = '20px';
-arButton.style.left     = '160px';
+arButton.style.bottom   = '70px';   
+arButton.style.left     = '20px';
 arButton.style.zIndex   = '999';
+arButton.style.width    = '140px';
 document.body.appendChild(arButton);
+
 
 // =====================================================
 //   SHADER FÜR ERDE + ATMOSPHÄRE
