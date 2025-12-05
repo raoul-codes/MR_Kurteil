@@ -1,40 +1,39 @@
 import * as THREE from "three";
 import { OrbitControls } from 'jsm/controls/OrbitControls.js';
 import { drawThreeGeo } from "./src/threeGeoJSON.js";
-// WebXR Buttons für VR und AR
 import { VRButton } from 'jsm/webxr/VRButton.js';
 import { ARButton } from 'jsm/webxr/ARButton.js';
 import { XRControllerModelFactory } from 'jsm/webxr/XRControllerModelFactory.js';
 
 // =====================================================
-//   SZENE, KAMERA, RENDERER
+//   SZENE, KAMERA, XR-RIG, RENDERER
 // =====================================================
 
 const scene = new THREE.Scene();
 
-// Kamera für Desktop-Ansicht
+// Kamera
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 2000);
 camera.position.set(0, 4, 10);
 camera.lookAt(0, 0, 0);
 
-// Kamera in die Szene einfügen (wichtig für 3D-UI, die an der Kamera hängt)
-scene.add(camera);
+// XR-Rig (Spieler / Benutzer-Referenz)
+// -> wir bewegen das Rig, nicht die Kamera direkt
+const xrRig = new THREE.Group();
+xrRig.position.set(0, 0, 0);
+xrRig.add(camera);
+scene.add(xrRig);
 
-// WebGL Renderer mit WebXR-Unterstützung
+// Renderer mit WebXR
 const renderer = new THREE.WebGLRenderer({
   antialias: true,
-  alpha: true  // wichtig für AR (durchsichtiger Hintergrund)
+  alpha: true
 });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(innerWidth, innerHeight);
-
-// WebXR aktivieren
 renderer.xr.enabled = true;
-
-// Canvas ins DOM einfügen
 document.body.appendChild(renderer.domElement);
 
-// Orbit Controls (nur für normalen Desktop-Modus genutzt)
+// OrbitControls (nur Desktop)
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enablePan = false;
 controls.minDistance = 8;
@@ -57,7 +56,7 @@ renderer.xr.addEventListener('sessionstart', () => {
   if (session && session.environmentBlendMode && session.environmentBlendMode !== 'opaque') {
     isARSession = true;
     oldBackground = scene.background;
-    scene.background = null; // Realwelt sichtbar
+    scene.background = null;
   } else {
     isARSession = false;
   }
@@ -71,7 +70,7 @@ renderer.xr.addEventListener('sessionend', () => {
 });
 
 // =====================================================
-//   WEBXR-BUTTONS (VR + AR) SAUBER PLATZIEREN
+//   WEBXR-BUTTONS (VR + AR)
 // =====================================================
 
 const vrButton = VRButton.createButton(renderer);
@@ -87,7 +86,7 @@ const arButton = ARButton.createButton(renderer, {
   optionalFeatures: ['local-floor']
 });
 arButton.style.position = 'absolute';
-arButton.style.bottom   = '70px';   // darüber
+arButton.style.bottom   = '70px';
 arButton.style.left     = '20px';
 arButton.style.zIndex   = '999';
 arButton.style.width    = '140px';
@@ -197,7 +196,7 @@ const nightAtmosphere = new THREE.Mesh(
   })
 );
 
-// Wireframe-Kugel für Länder-Umrisse
+// Wireframe-Kugel
 const geometry = new THREE.SphereGeometry(2.5, 64, 64);
 const lineMat = new THREE.LineBasicMaterial({
   color: 0xffffff,
@@ -210,14 +209,14 @@ const line = new THREE.LineSegments(edges, lineMat);
 // Globus-Gruppe
 const globe = new THREE.Group();
 
-// Wichtig: Globus vor den XR-User setzen, damit man NICHT "drin" ist
+// Wichtig: Globus vor den Benutzer setzen
 globe.position.set(0, 0, -6);
 scene.add(globe);
 
 globe.add(dayAtmosphere);
 globe.add(daySphere);
 
-// OrbitControls um neue Position kreisen lassen
+// OrbitControls → Ziel ist der Globus
 controls.target.copy(globe.position);
 controls.update();
 
@@ -289,14 +288,14 @@ function addStars() {
 addStars();
 
 // =====================================================
-//   GEOJSON + POLES (Covid-Visualisierung)
+//   GEOJSON + POLES
 // =====================================================
 
 const raycaster = new THREE.Raycaster();
 raycaster.far = 50;
 const mouse = new THREE.Vector2();
-const interactiveObjects = [];  // alle poles
-const allPoles = [];            // für Covid An/Aus
+const interactiveObjects = [];
+const allPoles = [];
 
 function latLonToVector3(lat, lon, radius) {
   const phi = (90 - lat) * (Math.PI / 180);
@@ -406,7 +405,7 @@ fetch('./geojson/countries.json')
   });
 
 // =====================================================
-//   COVID-API + INFOBOX (HTML) + 3D-UI PANEL
+//   COVID-API + INFOBOX + 3D-UI PANEL
 // =====================================================
 
 const covidCache = new Map();
@@ -448,48 +447,62 @@ const uiMaterial = new THREE.MeshBasicMaterial({
   map: uiTexture,
   transparent: true
 });
-
-// Ein etwas breiteres Panel
 const uiGeometry = new THREE.PlaneGeometry(2.4, 1.2);
 const uiPanel = new THREE.Mesh(uiGeometry, uiMaterial);
 
-// Panel vor der Kamera platzieren (im Kameraraum)
+// Panel im Kameraraum
 uiPanel.position.set(0, 1.0, -3);
 camera.add(uiPanel);
 
-// Hilfsfunktionen für das Panel
 function clearUIPanel() {
   uiCtx.clearRect(0, 0, uiCanvas.width, uiCanvas.height);
-
-  // Halbtransparenten Hintergrund
   uiCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
   uiCtx.fillRect(0, 0, uiCanvas.width, uiCanvas.height);
-
   uiCtx.fillStyle = 'white';
   uiCtx.font = '28px Arial';
   uiCtx.textAlign = 'center';
   uiCtx.fillText('Select a country by pointing at a pole', uiCanvas.width / 2, uiCanvas.height / 2);
-
   uiTexture.needsUpdate = true;
 }
 
-function drawUIPanel(data) {
+// flagImg ist optional (kann undefined sein)
+// flagImg ist optional (kann undefined sein)
+function drawUIPanel(data, flagImg) {
   uiCtx.clearRect(0, 0, uiCanvas.width, uiCanvas.height);
 
   // Hintergrund
   uiCtx.fillStyle = 'rgba(0, 0, 0, 0.75)';
   uiCtx.fillRect(0, 0, uiCanvas.width, uiCanvas.height);
 
-  // Titel
   uiCtx.fillStyle = 'white';
-  uiCtx.font = '30px Arial';
   uiCtx.textAlign = 'left';
-  uiCtx.fillText(data.country || 'Unknown', 20, 50);
 
-  // Linien
+  let yStart;
+
+  if (flagImg) {
+    // flag
+    const flagWidth = 120;
+    const flagHeight = 80;
+    const flagX = 20;
+    const flagY = 20;
+
+    uiCtx.drawImage(flagImg, flagX, flagY, flagWidth, flagHeight);
+
+    // name
+    uiCtx.font = '30px Arial';
+    uiCtx.fillText(data.country || 'Unknown', flagX + flagWidth + 20, flagY + 50);
+
+    yStart = flagY + flagHeight + 30; 
+  } else {
+    uiCtx.font = '30px Arial';
+    uiCtx.fillText(data.country || 'Unknown', 20, 50);
+    yStart = 90;
+  }
+
   uiCtx.font = '22px Arial';
-  let y = 90;
+
   const lineHeight = 32;
+  let y = yStart;
 
   const lines = [
     `Population: ${data.population?.toLocaleString?.() || 'n/a'}`,
@@ -508,9 +521,9 @@ function drawUIPanel(data) {
   uiTexture.needsUpdate = true;
 }
 
-// gemeinsame Funktion: HTML + 3D-Panel updaten
+
 function showCovidInfo(data) {
-  // HTML-InfoBox für Desktop
+  // HTML-Infobox (Desktop)
   infoBox.style.display = 'block';
   infoBox.innerHTML = `
     <div style="display:flex; align-items:center; margin-bottom:8px;">
@@ -525,11 +538,24 @@ function showCovidInfo(data) {
     <p><strong>Critical:</strong> ${data.critical.toLocaleString()}</p>
   `;
 
-  // 3D-Panel für VR/AR
   drawUIPanel(data);
+
+  const flagUrl = data.countryInfo?.flag;
+  if (flagUrl) {
+    const img = new Image();
+    img.crossOrigin = 'anonymous'; // wichtig für CORS
+    img.onload = () => {
+      drawUIPanel(data, img); 
+    };
+    img.onerror = () => {
+      
+      console.warn('Flag-Image konnte nicht geladen werden:', flagUrl);
+    };
+    img.src = flagUrl;
+  }
 }
 
-// Anfangszustand des Panels
+
 clearUIPanel();
 
 const toggleCovid = document.getElementById('toggleCovid');
@@ -547,7 +573,7 @@ toggleCovid.addEventListener('click', () => {
   }
 });
 
-// Maus-Raycasting (nur Desktop)
+// Maus-Raycasting (Desktop)
 window.addEventListener('mousemove', (event) => {
   if (renderer.xr.isPresenting) return;
 
@@ -583,18 +609,18 @@ const controllerModelFactory = new XRControllerModelFactory();
 
 const controller1 = renderer.xr.getController(0);
 const controller2 = renderer.xr.getController(1);
-scene.add(controller1);
-scene.add(controller2);
+xrRig.add(controller1);
+xrRig.add(controller2);
 
 const controllerGrip1 = renderer.xr.getControllerGrip(0);
 controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
-scene.add(controllerGrip1);
+xrRig.add(controllerGrip1);
 
 const controllerGrip2 = renderer.xr.getControllerGrip(1);
 controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
-scene.add(controllerGrip2);
+xrRig.add(controllerGrip2);
 
-// Sichtbarer "Laser"-Strahl
+// Sichtbare "Laser"
 function buildControllerVisual(controller) {
   const geometry = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(0, 0, 0),
@@ -613,11 +639,16 @@ buildControllerVisual(controller1);
 buildControllerVisual(controller2);
 
 const tempMatrix = new THREE.Matrix4();
+
+// Für Globe-Rotation beim Grab
 let grabbedGlobe = false;
 let activeController = null;
-const grabOffset = new THREE.Vector3();
+const initialControllerQuat = new THREE.Quaternion();
+const initialGlobeQuat = new THREE.Quaternion();
+const deltaQuat = new THREE.Quaternion();
+const invInitialControllerQuat = new THREE.Quaternion();
 
-// Hilfsfunktion: Ray aus Controller in die Szene
+// Hilfsfunktion: Ray aus Controller
 function intersectFromController(controller, objects) {
   tempMatrix.identity().extractRotation(controller.matrixWorld);
   raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
@@ -628,7 +659,7 @@ function intersectFromController(controller, objects) {
 function onSelectStart(event) {
   const controller = event.target;
 
-  // 1) Versuchen, einen Pole zu treffen
+  // 1) Pole treffen?
   const poleHits = intersectFromController(controller, interactiveObjects);
   if (poleHits.length > 0) {
     const pole = poleHits[0].object;
@@ -638,14 +669,12 @@ function onSelectStart(event) {
 
     const { isoCode } = pole.userData;
     fetchCovidData(isoCode).then(data => {
-      // Jetzt auch im 3D-Panel im Headset sichtbar
       showCovidInfo(data);
     });
-
     return;
   }
 
-  // 2) Wenn kein Pole getroffen → versuchen, den Globus zu "greifen"
+  // 2) Sonst Globus "greifen" => Rotation, nicht Translation
   const globeMeshes = [];
   if (globe.children.includes(daySphere)) globeMeshes.push(daySphere);
   if (globe.children.includes(nightSphere)) globeMeshes.push(nightSphere);
@@ -654,9 +683,8 @@ function onSelectStart(event) {
   if (globeHits.length > 0) {
     grabbedGlobe = true;
     activeController = controller;
-
-    const controllerPos = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
-    grabOffset.copy(globe.position).sub(controllerPos);
+    initialControllerQuat.copy(controller.quaternion);
+    initialGlobeQuat.copy(globe.quaternion);
   }
 }
 
@@ -665,7 +693,7 @@ function onSelectEnd() {
   activeController = null;
 }
 
-// Zoom via Squeeze: Globus näher/weiter
+// Zoom via Squeeze (optional beibehalten)
 let nearDistance = 4;
 let farDistance = 10;
 let isNear = false;
@@ -674,11 +702,10 @@ function onSqueezeStart() {
   const dir = globe.position.clone().normalize();
   isNear = !isNear;
   const d = isNear ? nearDistance : farDistance;
-  globe.position.copy(dir.multiplyScalar(-d)); // -d weil dir ~ (0,0,-1)
+  globe.position.copy(dir.multiplyScalar(-d));
   controls.target.copy(globe.position);
 }
 
-// Events an Controller binden
 controller1.addEventListener('selectstart', onSelectStart);
 controller1.addEventListener('selectend', onSelectEnd);
 controller1.addEventListener('squeezestart', onSqueezeStart);
@@ -686,6 +713,46 @@ controller1.addEventListener('squeezestart', onSqueezeStart);
 controller2.addEventListener('selectstart', onSelectStart);
 controller2.addEventListener('selectend', onSelectEnd);
 controller2.addEventListener('squeezestart', onSqueezeStart);
+
+// =====================================================
+//   LOCOMOTION MIT LINKEM STICK (ANALOG)
+// =====================================================
+
+const moveSpeed = 0.03;
+
+function handleXRGamepadMovement() {
+  const session = renderer.xr.getSession();
+  if (!session) return;
+
+  const inputSources = session.inputSources;
+  for (const source of inputSources) {
+    if (!source.gamepad) continue;
+    if (source.handedness !== 'left') continue; // nur linker Controller
+
+    const axes = source.gamepad.axes;
+    if (!axes || axes.length < 2) continue;
+
+    const xAxis = axes[0]; // links/rechts
+    const yAxis = axes[1]; // vor/zurück (negativ = nach vorn)
+
+    // Deadzone
+    if (Math.abs(xAxis) < 0.1 && Math.abs(yAxis) < 0.1) continue;
+
+    // Blickrichtung auf XZ-Projektion
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    forward.y = 0;
+    forward.normalize();
+
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    right.y = 0;
+    right.normalize();
+
+    // yAxis negativ = nach vorne
+    xrRig.position.addScaledVector(forward, moveSpeed * -yAxis);
+    // xAxis = strafen
+    xrRig.position.addScaledVector(right, moveSpeed * xAxis);
+  }
+}
 
 // =====================================================
 //   ANIMATION / ROTATION
@@ -699,11 +766,16 @@ function animate() {
     globe.rotation.y += rotationSpeed;
   }
 
-  // Wenn Globus "gegriffen" ist, folgt er dem Controller
+  // Globus-Rotation, wenn "gegriffen"
   if (grabbedGlobe && activeController) {
-    const controllerPos = new THREE.Vector3().setFromMatrixPosition(activeController.matrixWorld);
-    globe.position.copy(controllerPos).add(grabOffset);
+    deltaQuat.copy(activeController.quaternion);
+    invInitialControllerQuat.copy(initialControllerQuat).invert();
+    deltaQuat.multiply(invInitialControllerQuat);
+    globe.quaternion.copy(deltaQuat.multiply(initialGlobeQuat));
   }
+
+  // XR-Locomotion mit linkem Stick
+  handleXRGamepadMovement();
 
   if (!renderer.xr.isPresenting) {
     controls.update();
